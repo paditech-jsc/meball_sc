@@ -3,20 +3,17 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
+import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@api3/airnode-protocol/contracts/rrp/requesters/RrpRequesterV0.sol";
+import "hardhat/console.sol";
 
-contract ProbabilityBasedNFT is
-    ERC721,
-    ERC721URIStorage,
-    Ownable,
-    RrpRequesterV0
-{
+contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
+    struct MintRequest {
+        address requester;
+        string[] randomValues;
+        uint256 nonce;
+    }
     // Events
-    event RequestedRandomNumber(
-        address indexed sender,
-        bytes32 indexed requestId
-    );
     event NFTMinted(Team nftType, address owner);
 
     enum Team {
@@ -46,27 +43,22 @@ contract ProbabilityBasedNFT is
         Georgia
     }
 
-    address public airnode; /// The address of the QRNG Airnode
-    bytes32 public endpointIdUint256; /// The endpoint ID for requesting a single random number
-    address public sponsorWallet; /// The wallet that will cover the gas costs of the request
+    mapping(uint256 => Team) public tokenIdToTeam;
+    mapping(address => mapping(Team => uint256)) public addressToTypeCount;
+    mapping(bytes => bool) public signaturesUsed;
 
     uint256 public nextTokenId;
     uint256 public mintFee = 1 * 10 ** 18;
     uint8 constant NUM_TYPES = 24;
-
-    mapping(bytes32 => bool) public expectingRequestWithIdToBeFulfilled;
-    mapping(bytes32 => address) requestToSender;
-    mapping(uint256 => Team) public tokenIdToTeam;
-    mapping(address => mapping(Team => uint256)) public addressToTypeCount;
-
     uint8[NUM_TYPES] public probabilities;
     string[NUM_TYPES] public ipfsLinks;
+    bytes32 private _TYPEHASH;
+    address private contractSigner;
 
     constructor(
         uint8[NUM_TYPES] memory _probabilities,
-        string[NUM_TYPES] memory _ipfsLinks,
-        address _airnodeRrp
-    ) ERC721("ProbabilityBasedNFT", "PBNFT") RrpRequesterV0(_airnodeRrp) {
+        string[NUM_TYPES] memory _ipfsLinks
+    ) ERC721("MeballNFT", "PBNFT") EIP712("MeballNFT", "1") {
         require(
             _probabilities.length == NUM_TYPES,
             "Invalid probabilities length"
@@ -75,65 +67,39 @@ contract ProbabilityBasedNFT is
 
         probabilities = _probabilities;
         ipfsLinks = _ipfsLinks;
+        _TYPEHASH = keccak256(
+            "params(address _requester,string[] _randomValues,uint256 _nonce)"
+        );
+        contractSigner = msg.sender;
     }
 
-    function setRequestParameters(
-        address _airnode,
-        bytes32 _endpointIdUint256,
-        address _sponsorWallet
-    ) external {
-        airnode = _airnode;
-        endpointIdUint256 = _endpointIdUint256;
-        sponsorWallet = _sponsorWallet;
-    }
-
-    function requestRandomNFT() public payable returns (bytes32) {
+    function mintNFTs(
+        MintRequest calldata _req,
+        bytes calldata _signature
+    ) public payable onlySigner(getAddressWithSignature(_signature, _req)) {
         require(msg.value == mintFee, "Mint Fee not enough");
+        require(!signaturesUsed[_signature], "Signature already used");
+        signaturesUsed[_signature] = true;
 
-        bytes32 requestId = airnodeRrp.makeFullRequest(
-            airnode,
-            endpointIdUint256,
-            address(this),
-            sponsorWallet,
-            address(this),
-            this.generateQuantumon.selector,
-            ""
-        );
-        expectingRequestWithIdToBeFulfilled[requestId] = true;
-        requestToSender[requestId] = msg.sender;
-        (bool success, ) = sponsorWallet.call{value: 0.001 ether}("");
-        require(success, "Forward failed");
-        emit RequestedRandomNumber(msg.sender, requestId);
-        return requestId;
-    }
+        for (uint256 i = 0; i < _req.randomValues.length; i++) {
+            bytes32 messageHash = keccak256(
+                abi.encodePacked(_req.randomValues[i])
+            );
 
-    function generateQuantumon(
-        bytes32 requestId,
-        bytes calldata data
-    ) public onlyAirnodeRrp {
-        require(
-            expectingRequestWithIdToBeFulfilled[requestId],
-            "Request ID not known"
-        );
-        expectingRequestWithIdToBeFulfilled[requestId] = false;
-        address nftOwner = requestToSender[requestId];
+            uint256 randomNumber = uint256(messageHash) % 100;
+            Team nftType = getRandomNFTType(randomNumber);
 
-        uint256 newItemId = nextTokenId;
+            string memory tokenUri = getRandomizedTokenUri(uint256(nftType));
 
-        uint256 qrngUint256 = abi.decode(data, (uint256)) % 100;
+            _safeMint(msg.sender, nextTokenId);
+            _setTokenURI(nextTokenId, tokenUri);
 
-        Team nftType = getRandomNFTType(qrngUint256);
+            tokenIdToTeam[nextTokenId] = nftType;
+            addressToTypeCount[msg.sender][nftType]++;
+            nextTokenId++;
 
-        string memory tokenUri = getRandomizedTokenUri(uint256(nftType));
-
-        _safeMint(nftOwner, newItemId);
-
-        _setTokenURI(newItemId, tokenUri);
-        tokenIdToTeam[nextTokenId] = nftType;
-        addressToTypeCount[msg.sender][nftType]++;
-        nextTokenId++;
-
-        emit NFTMinted(nftType, nftOwner);
+            emit NFTMinted(nftType, msg.sender);
+        }
     }
 
     function tokenURI(
@@ -146,16 +112,28 @@ contract ProbabilityBasedNFT is
         returns (string memory)
     {
         _requireMinted(tokenId);
+        return super.tokenURI(tokenId);
+    }
 
-        string memory base = _baseURI();
+    function getAddressWithSignature(
+        bytes calldata signature,
+        MintRequest calldata req
+    ) public view returns (address) {
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    _TYPEHASH,
+                    req.requester,
+                    req.randomValues,
+                    req.nonce
+                )
+            )
+        );
 
-        // If there is no base URI, return the token URI.
-        if (bytes(base).length == 0) {
-            return super.tokenURI(tokenId); // Directly call the inherited implementation
-        }
+        address signer = ECDSA.recover(digest, signature);
+        console.log(signer);
 
-        // If both are set, concatenate the baseURI and tokenURI (via abi.encodePacked).
-        return string(abi.encodePacked(base, super.tokenURI(tokenId)));
+        return signer;
     }
 
     function getRandomNFTType(
@@ -193,5 +171,10 @@ contract ProbabilityBasedNFT is
         bytes4 interfaceId
     ) public view override(ERC721, ERC721URIStorage) returns (bool) {
         return super.supportsInterface(interfaceId);
+    }
+
+    modifier onlySigner(address _signer) {
+        require(contractSigner == _signer, "Not signer");
+        _;
     }
 }
