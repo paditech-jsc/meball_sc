@@ -10,7 +10,7 @@ import "hardhat/console.sol";
 contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
     struct MintRequest {
         address requester;
-        string[] randomValues;
+        bytes32 hashRandomValues;
         uint256 nonce;
     }
     // Events
@@ -68,22 +68,23 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
         probabilities = _probabilities;
         ipfsLinks = _ipfsLinks;
         _TYPEHASH = keccak256(
-            "params(address _requester,string[] _randomValues,uint256 _nonce)"
+            "params(address _requester,bytes32 _hashRandomValues,uint256 _nonce)"
         );
         contractSigner = msg.sender;
     }
 
     function mintNFTs(
         MintRequest calldata _req,
-        bytes calldata _signature
+        bytes calldata _signature,
+        string[] memory randomValues
     ) public payable onlySigner(getAddressWithSignature(_signature, _req)) {
         require(msg.value == mintFee, "Mint Fee not enough");
         require(!signaturesUsed[_signature], "Signature already used");
         signaturesUsed[_signature] = true;
 
-        for (uint256 i = 0; i < _req.randomValues.length; i++) {
+        for (uint256 i = 0; i < randomValues.length; i++) {
             bytes32 messageHash = keccak256(
-                abi.encodePacked(_req.randomValues[i])
+                abi.encodePacked(randomValues[i])
             );
 
             uint256 randomNumber = uint256(messageHash) % 100;
@@ -124,7 +125,7 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
                 abi.encode(
                     _TYPEHASH,
                     req.requester,
-                    req.randomValues,
+                    req.hashRandomValues,
                     req.nonce
                 )
             )

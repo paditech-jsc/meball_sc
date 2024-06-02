@@ -13,7 +13,7 @@ describe("CP Token", async () => {
         meballNFTContractAddress,
         signer,
         _requester,
-        _randomValues,
+        _hashRandomValues,
         _nonce
     ) => {
         let domain = {
@@ -26,14 +26,14 @@ describe("CP Token", async () => {
         let types = {
             params: [
                 { name: "_requester", type: "address" },
-                { name: "_randomValues", type: "string[]" },
+                { name: "_hashRandomValues", type: "bytes32" },
                 { name: "_nonce", type: "uint256" },
             ],
         };
 
         let value = {
             _requester,
-            _randomValues,
+            _hashRandomValues,
             _nonce
         };
 
@@ -51,19 +51,22 @@ describe("CP Token", async () => {
 
     describe("Mint token", () => {
         before(async () => {
+            const randomValues = ["abc", "xyz"];
+            const hashRandomValues = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(randomValues.join('')));
+            console.log(hashRandomValues)
             signature = await createSignature(
                 meballNFTContract.address,
                 owner,
                 owner.address,
-                ["abc"],
+                hashRandomValues,
                 14
             );
 
             const tx = await meballNFTContract.mintNFTs({
                 requester: owner.address,
-                randomValues: ["abc"],
+                hashRandomValues,
                 nonce: 14,
-            }, signature)
+            }, signature, randomValues)
             await tx.wait();
 
         });
