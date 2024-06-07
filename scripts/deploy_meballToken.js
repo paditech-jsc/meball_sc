@@ -5,7 +5,6 @@ async function main() {
     const meballFactory = await hre.ethers.getContractFactory("Meball");
     const meballContract = await meballFactory.deploy();
 
-    // console.log("cp address", cpContract.address);
     console.log("meball", meballContract.address)
 }
 
