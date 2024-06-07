@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract Meball is ERC20 {
-    constructor() ERC20("MEWA", "MEWA") {
+    constructor() ERC20("MEBALL", "MEBALL") {
         _mint(msg.sender, 100000 * 1e18);
     }
 
