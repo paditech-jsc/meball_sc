@@ -14,4 +14,4 @@ node_modules
 /coverage.json
 
 .openzeppelin
-./secrets.js
+secrets.js

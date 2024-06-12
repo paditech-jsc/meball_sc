@@ -42,7 +42,6 @@ describe("Meball NFT", async () => {
 
     before(async () => {
         [owner, addr1, addr2] = await ethers.getSigners();
-        deadline = Math.floor(Date.now() / 1000 + 5 * 60);
         const probabilities = ["1", "8", "3", "3", "1", "3", "1", "3", "8", "2", "3", "8", "3", "2", "8", "1", "3", "8", "8", "8", "3", "3", "1", "8"];
         const ipfsLinks = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24"]
         mintFee = ethers.utils.parseEther("0.01");
@@ -70,8 +69,6 @@ describe("Meball NFT", async () => {
             }, signature, {
                 value: mintFee.mul(randomValues.length)
             });
-            const receipt = await tx.wait(1)
-            console.log(receipt.gasUsed.toString())
 
             expect(await meballNFTContract.nextTokenId()).to.equal(randomValues.length);
             expect(await meballNFTContract.tokenIdToTeam(0)).to.be.within(0, 23);
@@ -121,6 +118,42 @@ describe("Meball NFT", async () => {
         });
 
 
+    });
+
+    describe("setMintFee", function () {
+        it("Should set the mint fee correctly", async function () {
+            const newMintFee = ethers.utils.parseEther("0.2");
+            await meballNFTContract.setMintFee(newMintFee);
+            expect(await meballNFTContract.mintFee()).to.equal(newMintFee);
+        });
+
+        it("Should revert if non-owner tries to set the mint fee", async function () {
+            const newMintFee = ethers.utils.parseEther("0.2");
+            await expect(
+                meballNFTContract.connect(addr1).setMintFee(newMintFee)
+            ).to.be.revertedWith("Ownable: caller is not the owner");
+        });
+    });
+
+    describe("withdraw", function () {
+
+        it("Should withdraw ETH correctly", async function () {
+            const initialOwnerBalance = await owner.getBalance();
+            await meballNFTContract.withdraw();
+            const finalOwnerBalance = await owner.getBalance();
+
+            expect(finalOwnerBalance).to.be.above(initialOwnerBalance);
+        });
+
+        it("Should revert if non-owner tries to withdraw", async function () {
+            await expect(
+                meballNFTContract.connect(addr1).withdraw()
+            ).to.be.revertedWith("Ownable: caller is not the owner");
+        });
+
+        it("Should revert if there is no balance to withdraw", async function () {
+            await expect(meballNFTContract.withdraw()).to.be.revertedWith("No balance to withdraw");
+        });
     });
 
 });

@@ -42,14 +42,19 @@ module.exports = {
             },
             allowUnlimitedContractSize: true,
         },
-        baseSepolia: {
-            url: "https://base-sepolia.blockpi.network/v1/rpc/public",
-            chainId: 84532,
+        bscTestnet: {
+            url: "https://data-seed-prebsc-1-s1.bnbchain.org:8545",
+            chainId: 97,
             accounts: [Secrets.privateKey]
         },
-        base: {
-            url: "https://base.publicnode.com",
-            chainId: 8453,
+        chiliz_spicy: {
+            url: "https://spicy-rpc.chiliz.com",
+            chainId: 88882,
+            accounts: [Secrets.privateKey]
+        },
+        chiliz: {
+            url: "https://rpc.ankr.com/chiliz",
+            chainId: 88888,
             accounts: [Secrets.privateKey]
         }
     },
@@ -58,7 +63,28 @@ module.exports = {
         currency: "USD",
     },
     etherscan: {
-        apiKey: Secrets.explorer_key.BASE,
-    }
+        apiKey: {
+            chiliz_spicy: "chiliz_spicy",  // apiKey is not required, just set a placeholder
+            chiliz: "chiliz",
+        },
+        customChains: [
+            {
+                network: "chiliz_spicy",
+                chainId: 88882,
+                urls: {
+                    apiURL: "https://api.routescan.io/v2/network/testnet/evm/88882/etherscan",
+                    browserURL: "https://testnet.chiliscan.com"
+                }
+            },
+            {
+                network: "chiliz",
+                chainId: 88888,
+                urls: {
+                    apiURL: "https://api.routescan.io/v2/network/mainnet/evm/88888/etherscan",
+                    browserURL: "https://chiliscan.com"
+                }
+            }
+        ]
+    },
 };
 

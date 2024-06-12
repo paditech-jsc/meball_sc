@@ -50,6 +50,7 @@ contract MeballStake is
         uint256 reward,
         uint256 season
     );
+    event EmergencyWithdraw(address indexed owner, uint256 amount);
 
     // ******** //
     //  ERRORS  //
@@ -157,6 +158,16 @@ contract MeballStake is
 
         rewardAmounts[staker][_season] += reward * 10 ** rewardToken.decimals();
         emit RewardCreated(staker, reward, _season);
+    }
+
+    function emergencyWithdraw() external onlyOwner {
+        uint256 balance = rewardToken.balanceOf(address(this));
+        require(balance > 0, "No reward tokens to withdraw");
+
+        bool success = rewardToken.transfer(msg.sender, balance);
+        require(success, "Transfer failed");
+
+        emit EmergencyWithdraw(msg.sender, balance);
     }
 
     function _processPayment(address to, uint256 amount) internal {

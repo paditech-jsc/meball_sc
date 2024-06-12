@@ -5,16 +5,17 @@ import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "hardhat/console.sol";
 
 contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
     struct MintRequest {
         address requester;
+        string[] randomValues;
         bytes32 hashRandomValues;
         uint256 nonce;
     }
     // Events
     event NFTMinted(Team nftType, address owner);
+    event Withdraw(address owner, uint256 amount);
 
     enum Team {
         Germany,
@@ -48,43 +49,59 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
     mapping(bytes => bool) public signaturesUsed;
 
     uint256 public nextTokenId;
-    uint256 public mintFee = 1 * 10 ** 18;
+    uint256 public mintFee;
     uint8 constant NUM_TYPES = 24;
-    uint8[NUM_TYPES] public probabilities;
+    uint8[NUM_TYPES] public cumulativeProbabilities;
     string[NUM_TYPES] public ipfsLinks;
     bytes32 private _TYPEHASH;
     address private contractSigner;
 
     constructor(
         uint8[NUM_TYPES] memory _probabilities,
-        string[NUM_TYPES] memory _ipfsLinks
-    ) ERC721("MeballNFT", "PBNFT") EIP712("MeballNFT", "1") {
+        string[NUM_TYPES] memory _ipfsLinks,
+        uint256 _mintFee,
+        address _adminAddress
+    ) ERC721("MeballNFT", "MBNFT") EIP712("MeballNFT", "1") {
         require(
             _probabilities.length == NUM_TYPES,
             "Invalid probabilities length"
         );
         require(_ipfsLinks.length == NUM_TYPES, "Invalid IPFS links length");
 
-        probabilities = _probabilities;
+        mintFee = _mintFee;
         ipfsLinks = _ipfsLinks;
+
         _TYPEHASH = keccak256(
             "params(address _requester,bytes32 _hashRandomValues,uint256 _nonce)"
         );
-        contractSigner = msg.sender;
+        contractSigner = _adminAddress;
+
+        uint8 sum = 0;
+        for (uint8 i = 0; i < NUM_TYPES; i++) {
+            sum += _probabilities[i];
+            cumulativeProbabilities[i] = sum;
+        }
     }
 
     function mintNFTs(
         MintRequest calldata _req,
-        bytes calldata _signature,
-        string[] memory randomValues
-    ) public payable onlySigner(getAddressWithSignature(_signature, _req)) {
-        require(msg.value == mintFee, "Mint Fee not enough");
+        bytes calldata _signature
+    )
+        public
+        payable
+        onlyContractSigner(getAddressWithSignature(_signature, _req))
+    {
+        require(_req.randomValues.length > 0, "Invalid request");
+        require(
+            msg.value >= mintFee * _req.randomValues.length,
+            "Mint Fee not enough"
+        );
         require(!signaturesUsed[_signature], "Signature already used");
         signaturesUsed[_signature] = true;
 
-        for (uint256 i = 0; i < randomValues.length; i++) {
+        for (uint8 i = 0; i < _req.randomValues.length; i++) {
             bytes32 messageHash = keccak256(
-                abi.encodePacked(randomValues[i])
+                abi.encodePacked(_req.randomValues[i])
             );
 
             uint256 randomNumber = uint256(messageHash) % 100;
@@ -101,6 +118,22 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
 
             emit NFTMinted(nftType, msg.sender);
         }
+    }
+
+    function setMintFee(uint256 _mintFee) external onlyOwner {
+        mintFee = _mintFee;
+    }
+
+    function withdraw() external onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No balance to withdraw");
+        (bool sent, ) = msg.sender.call{value: balance}("");
+        require(sent, "Failed to send Ether");
+        emit Withdraw(msg.sender, balance);
+    }
+
+    function changeOwner(address newOwner) external onlyOwner {
+        transferOwnership(newOwner);
     }
 
     function tokenURI(
@@ -132,7 +165,6 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
         );
 
         address signer = ECDSA.recover(digest, signature);
-        console.log(signer);
 
         return signer;
     }
@@ -140,12 +172,8 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
     function getRandomNFTType(
         uint256 randomNumber
     ) public view returns (Team team) {
-        uint256 sum = 0;
-
         for (uint256 i = 0; i < NUM_TYPES; i++) {
-            sum += probabilities[i];
-
-            if (randomNumber < sum) {
+            if (randomNumber < cumulativeProbabilities[i]) {
                 return Team(i);
             }
         }
@@ -174,7 +202,7 @@ contract MeballNFT is ERC721, ERC721URIStorage, Ownable, EIP712 {
         return super.supportsInterface(interfaceId);
     }
 
-    modifier onlySigner(address _signer) {
+    modifier onlyContractSigner(address _signer) {
         require(contractSigner == _signer, "Not signer");
         _;
     }
