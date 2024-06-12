@@ -3,13 +3,16 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Meball is ERC20 {
-    constructor() ERC20("MEBALL", "MEBALL") {
-        _mint(msg.sender, 100000 * 1e18);
-    }
-
-    function mint(uint256 _amount) public {
-        _mint(msg.sender, _amount * 1e18);
+contract Meball is ERC20, Ownable {
+    constructor(
+        string memory name,
+        string memory symbol,
+        uint256 _totalSupply,
+        address treasury
+    ) ERC20(name, symbol) {
+        _mint(treasury, _totalSupply);
+        _transferOwnership(treasury);
     }
 }
